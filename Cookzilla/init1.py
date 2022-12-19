@@ -29,15 +29,6 @@ conn = pymysql.connect(host='localhost',
                        db='Test',
                        charset='utf8mb4',
                        cursorclass=pymysql.cursors.DictCursor)
-##Doma's conn below
-# conn = pymysql.connect(host='localhost',
-#                        port = 8889,
-#                        user='root',
-#                        password='root',
-#                        db='Test',
-#                        charset='utf8mb4',
-#                        cursorclass=pymysql.cursors.DictCursor)
-
 
 def allowed_file(filename):
 	return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -478,7 +469,6 @@ def add_event_process():
         group_name = request.form['group_name']
         group_creator = request.form['group_creator']
         event_datetime = datetime.strptime(event_date + " " + event_time, "%Y-%m-%d %H:%M")
-        print(event_description)
         cursor = conn.cursor()
         # User has to be part of the group to create an event  
         ins_check='SELECT * FROM GroupMembership WHERE gName=%s AND gCreator=%s AND memberName=%s'
@@ -497,10 +487,21 @@ def add_event_process():
 
             ## We need to somehow maybe?? grab eID to make that the next part run for this function
             #Fetching the info
-            ins1='SELECT * FROM Event WHERE eName=%s AND eDesc=%s AND  eDate=%s AND gName=%s AND gCreator=%s'
-            cursor.execute(ins1,(event_name,event_description,event_datetime, group_name,group_creator))
-            Eventdata = cursor.fetchall()
+            qEid='SELECT LAST_INSERT_ID()'
+            cursor.execute(qEid)
+            getEid=cursor.fetchone()
+            print(getEid)
+            print(getEid["LAST_INSERT_ID()"])
+    
+            ins1='SELECT * FROM Event WHERE eID=%s'
+            cursor.execute(ins1,(getEid["LAST_INSERT_ID()"]))
+            Eventdata = cursor.fetchone()
             print(Eventdata)
+
+            # ins1='SELECT * FROM Event WHERE eName=%s AND eDesc=%s AND  eDate=%s AND gName=%s AND gCreator=%s'
+            # cursor.execute(ins1,(event_name,event_description,event_datetime, group_name,group_creator))
+            # Eventdata = cursor.fetchall()
+            # print(Eventdata)
 
             conn.commit()
             # return render_template('viewoneevent.html', message_join=message_join)
@@ -705,9 +706,9 @@ def viewonerecipe():
         RecipePictureURL = "../" +RecipePicturedata[0]['pictureURL']
         print(RecipePictureURL)
         return render_template('viewonerecipe.html', NumReview=NumReviews, Recipedata=Recipedata,RecipeIngredientdata=RecipeIngredientStr,Stepdata=StepStr,Tagdata=TagStr,recipeID=recipeID,ReviewData=ReviewData,RecipePictureURL=RecipePictureURL)
-    elif len(RecipePicturedata) > 0:
+    elif len(ReviewPicturedata) > 0:
         ReviewPictureURLs = ["../" +ReviewData[i]['pictureURL'] if ReviewData[i]['pictureURL']!=None else "" for i in range(len (ReviewData))]
-        print(RecipePictureURL)
+        print(ReviewPictureURLs)
         return render_template('viewonerecipe.html', NumReview=NumReviews, Recipedata=Recipedata,RecipeIngredientdata=RecipeIngredientStr,Stepdata=StepStr,Tagdata=TagStr,recipeID=recipeID,ReviewData=ReviewData,ReviewPictureURLs=ReviewPictureURLs)
     else: 
         return render_template('viewonerecipe.html', NumReview=NumReviews, Recipedata=Recipedata,RecipeIngredientdata=RecipeIngredientStr,Stepdata=StepStr,Tagdata=TagStr,recipeID=recipeID,ReviewData=ReviewData)
@@ -840,14 +841,14 @@ def findUsers():
 
         if len(keysDict.keys())==1: 
             if keysDict.keys()>={'tag'}:
-                ins='SELECT * from person NATURAL JOIN recipe NATURAL JOIN recipetag NATURAL JOIN review AS R1 where tagText=%s and stars-(SELECT stars FROM recipe NATURAL JOIN recipetag NATURAL JOIN review AS R2 where R1.recipeID=R2.recipeID AND tagText=%s GROUP BY postedBy HAVING postedBy= %s) <2 and userName!= %s'
+                ins='SELECT * from person NATURAL JOIN recipe NATURAL JOIN recipetag NATURAL JOIN review AS R1 where tagText=%s and ABS(stars-(SELECT stars FROM recipe NATURAL JOIN recipetag NATURAL JOIN review AS R2 where R1.recipeID=R2.recipeID AND tagText=%s GROUP BY userName HAVING userName= %s)) <2 and userName!= %s'
 
                 args=[keysDict['tag'],keysDict['tag'],session.get('username'),session.get('username')]
             elif keysDict.keys()>={'ingredient'}:
-                ins='SELECT * from person NATURAL JOIN recipe NATURAL JOIN recipeingredient NATURAL JOIN review where iName=%s and stars-(SELECT stars FROM recipe NATURAL JOIN recipeingredient NATURAL JOIN review where iName=%s GROUP BY postedBy HAVING postedBy= %s) <2 and userName!= %s'
+                ins='SELECT * from person NATURAL JOIN recipe NATURAL JOIN recipeingredient NATURAL JOIN review where iName=%s and stars-(SELECT stars FROM recipe NATURAL JOIN recipeingredient NATURAL JOIN review where iName=%s GROUP BY userName HAVING userName= %s) <2 and userName!= %s'
                 args=[keysDict['ingredient'],keysDict['ingredient'],session.get('username'),session.get('username')]
             else:
-                ins='SELECT * from person NATURAL JOIN recipe NATURAL JOIN review where title LIKE %s and stars-(SELECT stars FROM recipe NATURAL JOIN review where title LIKE %s GROUP BY postedBy HAVING postedBy= %s) <2 and userName!= %s'
+                ins='SELECT * from person NATURAL JOIN recipe NATURAL JOIN review where title LIKE %s and stars-(SELECT stars FROM recipe NATURAL JOIN review where title LIKE %s GROUP BY userName HAVING userName= %s) <2 and userName!= %s'
                 recipeName='%'+keysDict['recname']+'%'
                 args=[recipeName,recipeName,session.get('username'),session.get('username')]
         else:
@@ -941,8 +942,8 @@ def complexQueries():
         q2 = cursor.fetchall()
         q2len=len(q2)
 
-        stmt3='select * from ((SELECT recipeId From recipe) EXCEPT (SELECT DISTINCT(recipeId) FROM userlog WHERE logtime>%s)) As recipesNotViewed JOIN Recipe ON Recipe.RecipeId=recipesNotViewed.recipeId'
-        cursor.execute(stmt3,((datetime.now()- timedelta(days=30)).strftime("%Y-%m-%d %H:%M:%S")))
+        stmt3='select * from ((SELECT recipeId From recipe) EXCEPT (SELECT DISTINCT(recipeId) FROM userlog WHERE DATE(logtime)>%s)) As recipesNotViewed LEFT JOIN Recipe ON Recipe.RecipeId=recipesNotViewed.recipeId'
+        cursor.execute(stmt3,((datetime.now()- timedelta(days=7)).strftime("%Y-%m-%d")))
         q3 = cursor.fetchall()
         q3len=len(q3)  
 
